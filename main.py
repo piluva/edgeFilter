@@ -76,9 +76,9 @@ def check_prev(message_json):
 def process_elevacion_type(message_lora, hubManager):
     global TwinPayload
     json_obj = {}
-    deveui = message_lora["deveui"]
+    deveui = message_lora['deveui']
     # decode data
-    data_decoded = base64.b64decode(message_lora["data"])
+    data_decoded = base64.b64decode(message_lora['data'])
     data_decoded = data_decoded.decode('unicode_escape')
     # save decoded data as json object
     data_decoded_json = json.loads(data_decoded)
@@ -86,9 +86,9 @@ def process_elevacion_type(message_lora, hubManager):
     json_obj['time'] = message_lora['time']
     
     # send message for first id
-    if ('id' in TwinPayload["desired"]["devices"][deveui] and ("stateA" in data_decoded_json)):
-        json_obj["estado"] = data_decoded_json["stateA"]
-        json_obj['id'] = TwinPayload["desired"]["devices"][deveui]["id"]
+    if ('id' in TwinPayload['desired']['devices'][deveui] and ("stateA" in data_decoded_json)):
+        json_obj['estado'] = data_decoded_json['stateA']
+        json_obj['id'] = TwinPayload['desired']['devices'][deveui]['id']
         json_obj_ = check_prev(json_obj)
         # check previous
         if json_obj_ != None:
@@ -97,9 +97,9 @@ def process_elevacion_type(message_lora, hubManager):
             hubManager.forward_event_to_output("output1", new_message, 0)
 
     # send separate message for same-deveui/different-id scenario
-    if (("id2" in TwinPayload["desired"]["devices"][deveui]) and ("stateB" in data_decoded_json)):
-        json_obj["estado"] = data_decoded_json["stateB"]
-        json_obj["id"] = TwinPayload["desired"]["devices"][deveui]["id2"]
+    if (("id2" in TwinPayload['desired']['devices'][deveui]) and ("stateB" in data_decoded_json)):
+        json_obj['estado'] = data_decoded_json['stateB']
+        json_obj['id'] = TwinPayload['desired']['devices'][deveui]['id2']
         json_obj_ = check_prev(json_obj)
         # check previous
         if json_obj_ != None:
@@ -127,12 +127,13 @@ def receive_message_callback(message, hubManager):
     # lora messages loaded to json object.
     message_lora = json.loads(message_text)
     # save incoming deveui
-    deveui = message_lora["deveui"]
+    deveui = message_lora['deveui']
     
     # look for device declaration if any
-    if deveui in TwinPayload["desired"]["devices"]:
-        #if 'tipo' in TwinPayload["desired"]["devices"][deveui]:
-        process_elevacion_type(message_lora, hubManager)
+    if deveui in TwinPayload['desired']['devices']:
+        if 'tipo' in TwinPayload['desired']['devices'][deveui]:
+            if (TwinPayload['desired']['devices'][deveui]['tipo'] == "elevacion"):
+                process_elevacion_type(message_lora, hubManager)
     else:
         # send event to Hub
         hubManager.forward_event_to_output("output1", message, 0)
