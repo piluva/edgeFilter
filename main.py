@@ -23,7 +23,10 @@ RECEIVE_CALLBACKS = 0
 SEND_CALLBACKS = 0
 TWIN_CALLBACKS = 0
 
+# Twin Payload store
 TwinPayload = {}
+# latest messages JSON
+last_messages = {}
 
 # Choose HTTP, AMQP or MQTT as transport protocol.  Currently only MQTT is supported.
 PROTOCOL = IoTHubTransportProvider.MQTT
@@ -48,6 +51,61 @@ def send_confirmation_callback(message, result, user_context):
     SEND_CALLBACKS += 1
     print ( "    Total calls confirmed: %d" % SEND_CALLBACKS )
 
+def check_prev(message_json):
+    global last_messages
+    output = None
+    iden = message_json['id']
+    # check if id is present in last_messages json
+    if iden in last_messages:
+        # check if last estado is different from incoming and prepare for output
+        if last_messages[iden]['estado'] != message_json['estado']:
+            output = message_json
+            print("diferente mensaje")
+        else:
+            print("es igual")
+    else:
+        output = message_json
+        print("nuevo mensaje")
+    # fill last message json for id
+    last_messages[iden] = {}
+    last_messages[iden]['time'] = message_json['time']
+    last_messages[iden]['estado'] = message_json['estado']
+    
+    return output
+
+def process_elevacion_type(message_lora, hubManager):
+    global TwinPayload
+    json_obj = {}
+    deveui = message_lora["deveui"]
+    # decode data
+    data_decoded = base64.b64decode(message_lora["data"])
+    data_decoded = data_decoded.decode('unicode_escape')
+    # save decoded data as json object
+    data_decoded_json = json.loads(data_decoded)
+
+    json_obj['time'] = message_lora['time']
+    
+    # send message for first id
+    if ('id' in TwinPayload["desired"]["devices"][deveui] and ("stateA" in data_decoded_json)):
+        json_obj["estado"] = data_decoded_json["stateA"]
+        json_obj['id'] = TwinPayload["desired"]["devices"][deveui]["id"]
+        json_obj_ = check_prev(json_obj)
+        # check previous
+        if json_obj_ != None:
+            new_message = json.dumps(json_obj_)
+            new_message = IoTHubMessage(new_message)
+            hubManager.forward_event_to_output("output1", new_message, 0)
+
+    # send separate message for same-deveui/different-id scenario
+    if (("id2" in TwinPayload["desired"]["devices"][deveui]) and ("stateB" in data_decoded_json)):
+        json_obj["estado"] = data_decoded_json["stateB"]
+        json_obj["id"] = TwinPayload["desired"]["devices"][deveui]["id2"]
+        json_obj_ = check_prev(json_obj)
+        # check previous
+        if json_obj_ != None:
+            new_message = json.dumps(json_obj_)
+            new_message = IoTHubMessage(new_message)
+            hubManager.forward_event_to_output("output1", new_message, 0)
 
 # receive_message_callback is invoked when an incoming message arrives on the specified 
 # input queue (in the case of this sample, "input1").  Because this is a filter module, 
@@ -55,7 +113,7 @@ def send_confirmation_callback(message, result, user_context):
 def receive_message_callback(message, hubManager):
     global RECEIVE_CALLBACKS
     global TwinPayload
-    json_obj = {}
+    # Decode Conduit Downstream Device message
     message_buffer = message.get_bytearray()
     size = len(message_buffer)
     message_text = message_buffer[:size].decode('utf-8')
@@ -71,40 +129,14 @@ def receive_message_callback(message, hubManager):
     # save incoming deveui
     deveui = message_lora["deveui"]
     
-    # replace deveui with ID if any
+    # look for device declaration if any
     if deveui in TwinPayload["desired"]["devices"]:
-        iden = TwinPayload["desired"]["devices"][deveui]["id"]
-        json_obj["ID"] = iden
+        #if 'tipo' in TwinPayload["desired"]["devices"][deveui]:
+        process_elevacion_type(message_lora, hubManager)
     else:
-        json_obj["deveui"] = deveui
-    
-    # decode data
-    data_decoded = base64.b64decode(message_lora["data"])
-    data_decoded = data_decoded.decode('unicode_escape')
-    # save decoded data as json object
-    data_decoded_json = json.loads(data_decoded)
-
-    # add properties to new json message
-    json_obj["time"] = message_lora["time"]
-    json_obj["Estado"] = data_decoded_json["stateA"]
-
-    # generate created message for Hub
-    json_new = json.dumps(json_obj)
-    new_message = IoTHubMessage(json_new)
-
-    # send event to Hub
-    hubManager.forward_event_to_output("output1", new_message, 0)
-
-    # send separate message for same-deveui/different-id scenario
-    if deveui in TwinPayload["desired"]["devices"]:
-        if (("id2" in TwinPayload["desired"]["devices"][deveui]) and ("stateB" in data_decoded_json)):
-            json_obj["Estado"] = data_decoded_json["stateB"]
-            json_obj["ID"] = TwinPayload["desired"]["devices"][deveui]["id2"]
-            print( "Estado B %s" % data_decoded_json["stateB"])
-            json_new = json.dumps(json_obj)
-            new_message = IoTHubMessage(json_new)
-            hubManager.forward_event_to_output("output1", new_message, 0)
-
+        # send event to Hub
+        hubManager.forward_event_to_output("output1", message, 0)
+        
     return IoTHubMessageDispositionResult.ACCEPTED
 
 
