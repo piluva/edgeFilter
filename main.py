@@ -59,33 +59,43 @@ def receive_message_callback(message, hubManager):
     message_buffer = message.get_bytearray()
     size = len(message_buffer)
     message_text = message_buffer[:size].decode('utf-8')
-    print ( "    Esta Data: <<<%s>>> & Size=%d" % (message_text, size) )
+    print ( "    Data: <<<%s>>> & Size=%d" % (message_text, size) )
     #map_properties = message.properties()
     #key_value_pair = map_properties.get_internals()
     #print ( "    Properties: %s" % key_value_pair )
     RECEIVE_CALLBACKS += 1
     print ( "    Total calls received: %d" % RECEIVE_CALLBACKS )
+    
+    # lora messages loaded to json object.
     message_lora = json.loads(message_text)
+    # save incoming deveui
     deveui = message_lora["deveui"]
+    
+    # replace deveui with ID if any
     if deveui in TwinPayload["desired"]["devices"]:
         iden = TwinPayload["desired"]["devices"][deveui]["id"]
         json_obj["ID"] = iden
-        print ( "  iden = %s" % iden)
     else:
         json_obj["deveui"] = deveui
+    
+    # decode data
     data_decoded = base64.b64decode(message_lora["data"])
     data_decoded = data_decoded.decode('unicode_escape')
-    print ( "data_decoded: %s" % data_decoded)
+    # save decoded data as json object
     data_decoded_json = json.loads(data_decoded)
 
+    # add properties to new json message
     json_obj["time"] = message_lora["time"]
     json_obj["Estado"] = data_decoded_json["stateA"]
 
+    # generate created message for Hub
     json_new = json.dumps(json_obj)
     new_message = IoTHubMessage(json_new)
 
+    # send event to Hub
     hubManager.forward_event_to_output("output1", new_message, 0)
 
+    # send separate message for same-deveui/different-id scenario
     if deveui in TwinPayload["desired"]["devices"]:
         if (("id2" in TwinPayload["desired"]["devices"][deveui]) and ("stateB" in data_decoded_json)):
             json_obj["Estado"] = data_decoded_json["stateB"]
