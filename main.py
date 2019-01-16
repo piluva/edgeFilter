@@ -8,6 +8,7 @@ import time
 import sys
 import iothub_client
 import base64
+from datetime import datetime
 # pylint: disable=E0611
 from iothub_client import IoTHubModuleClient, IoTHubClientError, IoTHubTransportProvider
 from iothub_client import IoTHubMessage, IoTHubMessageDispositionResult, IoTHubError
@@ -51,6 +52,19 @@ def send_confirmation_callback(message, result, user_context):
     print ( "    Total calls confirmed: %d" % SEND_CALLBACKS )
 
 
+def time_parser(message):
+    # check if there is a timestap in message
+    if ((not "time") in message):
+        print("no hay time dentro del mensaje")
+        return 0
+    else:
+        time = message['time']
+        # separate date and time
+        time_splitted = time.split("T", 1)
+        # eliminate milliseconds
+        time_splitted[1] = (time_splitted[1].split(".", 1))[0]
+        return time_splitted
+
 
 def check_prev(message_json):
     global last_messages
@@ -69,7 +83,8 @@ def check_prev(message_json):
         print("nuevo mensaje")
     # fill last message json for id
     last_messages[iden] = {}
-    last_messages[iden]['time'] = message_json['time']
+    last_messages['Fecha'] = message_json['Fecha']
+    last_messages['Hora'] = message_json['Hora']
     last_messages[iden]['estado'] = message_json['estado']
     
     return output
@@ -93,7 +108,8 @@ def process_elevacion_type(message_lora, hubManager):
     # save decoded data as json object
     data_decoded_json = json.loads(str(data_decoded))
 
-    json_obj['time'] = message_lora['time']
+    json_obj['Fecha'] = time_parser(message_lora)[0]
+    json_obj['Hora'] = time_parser(message_lora)[1]
     
     # send message for first id
     if ('id' in TwinPayload['desired']['devices'][deveui] and ("stateA" in data_decoded_json)):
