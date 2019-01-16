@@ -8,7 +8,6 @@ import time
 import sys
 import iothub_client
 import base64
-import codecs
 # pylint: disable=E0611
 from iothub_client import IoTHubModuleClient, IoTHubClientError, IoTHubTransportProvider
 from iothub_client import IoTHubMessage, IoTHubMessageDispositionResult, IoTHubError
@@ -51,6 +50,8 @@ def send_confirmation_callback(message, result, user_context):
     SEND_CALLBACKS += 1
     print ( "    Total calls confirmed: %d" % SEND_CALLBACKS )
 
+
+
 def check_prev(message_json):
     global last_messages
     output = None
@@ -73,20 +74,30 @@ def check_prev(message_json):
     
     return output
 
+
 def process_elevacion_type(message_lora, hubManager):
     global TwinPayload
+    valid_data = False
     json_obj = {}
+    # save deveui
     deveui = message_lora['deveui']
-    # decode data
-    data_decoded = base64.b64decode(message_lora['data'])
-    data_decoded = data_decoded.decode('unicode_escape')
+    # if data isnt empty, then decode it, else create empty json for data.
+    data_decoded = {}
+    # check for existing data
+    if message_lora['data']:
+        # decode data
+        data_decoded = base64.b64decode(message_lora['data'])
+        data_decoded = data_decoded.decode('unicode_escape')
+    else:
+        print("Invalid message data.")
     # save decoded data as json object
-    data_decoded_json = json.loads(data_decoded)
+    data_decoded_json = json.loads(str(data_decoded))
 
     json_obj['time'] = message_lora['time']
     
     # send message for first id
     if ('id' in TwinPayload['desired']['devices'][deveui] and ("stateA" in data_decoded_json)):
+        valid_data = True
         json_obj['estado'] = data_decoded_json['stateA']
         json_obj['id'] = TwinPayload['desired']['devices'][deveui]['id']
         json_obj_ = check_prev(json_obj)
@@ -98,6 +109,7 @@ def process_elevacion_type(message_lora, hubManager):
 
     # send separate message for same-deveui/different-id scenario
     if (("id2" in TwinPayload['desired']['devices'][deveui]) and ("stateB" in data_decoded_json)):
+        valid_data = True
         json_obj['estado'] = data_decoded_json['stateB']
         json_obj['id'] = TwinPayload['desired']['devices'][deveui]['id2']
         json_obj_ = check_prev(json_obj)
@@ -106,6 +118,10 @@ def process_elevacion_type(message_lora, hubManager):
             new_message = json.dumps(json_obj_)
             new_message = IoTHubMessage(new_message)
             hubManager.forward_event_to_output("output1", new_message, 0)
+
+    if not valid_data:
+        print("Invalid data format.")
+
 
 # receive_message_callback is invoked when an incoming message arrives on the specified 
 # input queue (in the case of this sample, "input1").  Because this is a filter module, 
@@ -177,6 +193,7 @@ def main(protocol):
 
         while True:
             time.sleep(1)
+            #report_timeout()
 
     except IoTHubError as iothub_error:
         print ( "Unexpected error %s from IoTHub" % iothub_error )
