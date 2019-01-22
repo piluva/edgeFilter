@@ -9,6 +9,7 @@ import sys
 import iothub_client
 import base64
 from datetime import datetime
+from datetime import timedelta
 # pylint: disable=E0611
 from iothub_client import IoTHubModuleClient, IoTHubClientError, IoTHubTransportProvider
 from iothub_client import IoTHubMessage, IoTHubMessageDispositionResult, IoTHubError
@@ -55,7 +56,7 @@ def send_confirmation_callback(message, result, user_context):
 def time_parser(message):
     # check if there is a timestap in message
     if ((not "time") in message):
-        print("no hay time dentro del mensaje")
+        print("Invalid time.")
         return 0
     else:
         time = message['time']
@@ -75,17 +76,19 @@ def check_prev(message_json):
         # check if last estado is different from incoming and prepare for output
         if last_messages[iden]['estado'] != message_json['estado']:
             output = message_json
-            print("diferente mensaje")
+            print("Different Message")
         else:
-            print("es igual")
+            print("Same Message")
     else:
         output = message_json
-        print("nuevo mensaje")
+        print("New Message")
     # fill last message json for id
     last_messages[iden] = {}
-    last_messages['Fecha'] = message_json['Fecha']
-    last_messages['Hora'] = message_json['Hora']
+    last_messages[iden]['time'] = message_json['time']
     last_messages[iden]['estado'] = message_json['estado']
+    last_messages[iden]['envia'] = True
+
+    print(str(last_messages))
     
     return output
 
@@ -107,16 +110,18 @@ def process_elevacion_type(message_lora, hubManager):
         print("Invalid message data.")
     # save decoded data as json object
     data_decoded_json = json.loads(str(data_decoded))
-
-    json_obj['Fecha'] = time_parser(message_lora)[0]
-    json_obj['Hora'] = time_parser(message_lora)[1]
     
+    json_obj['time'] = message_lora['time']
+
     # send message for first id
     if ('id' in TwinPayload['desired']['devices'][deveui] and ("stateA" in data_decoded_json)):
         valid_data = True
         json_obj['estado'] = data_decoded_json['stateA']
         json_obj['id'] = TwinPayload['desired']['devices'][deveui]['id']
         json_obj_ = check_prev(json_obj)
+        json_obj.pop('time', 0)
+        json_obj['Fecha'] = time_parser(message_lora)[0]
+        json_obj['Hora'] = time_parser(message_lora)[1]
         # check previous
         if json_obj_ != None:
             new_message = json.dumps(json_obj_)
@@ -129,6 +134,9 @@ def process_elevacion_type(message_lora, hubManager):
         json_obj['estado'] = data_decoded_json['stateB']
         json_obj['id'] = TwinPayload['desired']['devices'][deveui]['id2']
         json_obj_ = check_prev(json_obj)
+        json_obj.pop('time', 0)
+        json_obj['Fecha'] = time_parser(message_lora)[0]
+        json_obj['Hora'] = time_parser(message_lora)[1]
         # check previous
         if json_obj_ != None:
             new_message = json.dumps(json_obj_)
@@ -137,6 +145,23 @@ def process_elevacion_type(message_lora, hubManager):
 
     if not valid_data:
         print("Invalid data format.")
+
+
+def report_timeout(hubManager):
+    global last_messages
+    delta_time = 0
+    currentTime = datetime.utcnow()
+    for iden in last_messages.items():
+        last_time = last_messages[iden[0]]['time']
+        last_time = datetime.strptime(last_time, "%Y-%m-%dT%H:%M:%S.%fZ")
+        delta_time = currentTime - last_time
+        if (delta_time > (timedelta(minutes=6))):
+            last_messages[iden[0]]['envia'] = False
+            if (not last_messages[iden[0]]['envia']):
+                print("No se reciben mensajes de %s hace mas de 6 minutos." % iden[0])
+                new_message = ("No se reciben mensajes de %s hace mas de 6 minutos." % iden[0])
+                new_message = IoTHubMessage(new_message)
+                hubManager.forward_event_to_output("output1", new_message, 0)            
 
 
 # receive_message_callback is invoked when an incoming message arrives on the specified 
@@ -162,6 +187,8 @@ def receive_message_callback(message, hubManager):
     deveui = message_lora['deveui']
     
     # look for device declaration if any
+    if TwinPayload == {}:
+        module_twin_callback
     if deveui in TwinPayload['desired']['devices']:
         if 'tipo' in TwinPayload['desired']['devices'][deveui]:
             if (TwinPayload['desired']['devices'][deveui]['tipo'] == "elevacion"):
@@ -209,7 +236,7 @@ def main(protocol):
 
         while True:
             time.sleep(1)
-            #report_timeout()
+            report_timeout(hub_manager)
 
     except IoTHubError as iothub_error:
         print ( "Unexpected error %s from IoTHub" % iothub_error )
