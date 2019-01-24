@@ -23,11 +23,16 @@ MESSAGE_TIMEOUT = 10000
 RECEIVE_CALLBACKS = 0
 SEND_CALLBACKS = 0
 TWIN_CALLBACKS = 0
+SEND_REPORTED_STATE_CALLBACKS = 0
+
+SEND_REPORTED_STATE_CONTEXT = 0
 
 # Twin Payload store
 TwinPayload = {}
 # latest messages JSON
 last_messages = {}
+# reported properties
+reported_state = {}
 
 # Choose HTTP, AMQP or MQTT as transport protocol.  Currently only MQTT is supported.
 PROTOCOL = IoTHubTransportProvider.MQTT
@@ -41,6 +46,15 @@ def module_twin_callback(update_state, payload, user_context):
     print( "TwinPayload: %s\n" % TwinPayload)
     TWIN_CALLBACKS += 1
     print ( "Total calls confirmed: %d\n" % TWIN_CALLBACKS )
+
+
+def send_reported_state_callback(status_code, user_context):
+    global SEND_REPORTED_STATE_CALLBACKS
+    SEND_REPORTED_STATE_CALLBACKS += 1
+    print ( "" )
+    print ( "Confirmation for reported state called with:" )
+    print ( "    status_code: %d" % status_code )
+
 
 # Callback received when the message that we're forwarding is processed.
 def send_confirmation_callback(message, result, user_context):
@@ -86,7 +100,7 @@ def check_prev(message_json):
     last_messages[iden] = {}
     last_messages[iden]['time'] = message_json['time']
     last_messages[iden]['estado'] = message_json['estado']
-    last_messages[iden]['envia'] = True
+    last_messages[iden]['avisado'] = False
 
     print(str(last_messages))
     
@@ -155,9 +169,8 @@ def report_timeout(hubManager):
         last_time = last_messages[iden[0]]['time']
         last_time = datetime.strptime(last_time, "%Y-%m-%dT%H:%M:%S.%fZ")
         delta_time = currentTime - last_time
-        if (delta_time > (timedelta(minutes=6))):
-            last_messages[iden[0]]['envia'] = False
-            if (not last_messages[iden[0]]['envia']):
+        if (delta_time > (timedelta(minutes=4))) and (not last_messages[iden[0]]['avisado']):
+                last_messages[iden[0]]['avisado'] = True
                 print("No se reciben mensajes de %s hace mas de 6 minutos." % iden[0])
                 new_message = ("No se reciben mensajes de %s hace mas de 6 minutos." % iden[0])
                 new_message = IoTHubMessage(new_message)
@@ -219,10 +232,15 @@ class HubManager(object):
         # Sets the callback when a module twin's desired properties are updated.
         self.client.set_module_twin_callback(module_twin_callback, self)
 
+        # Sets callback for module twin reported properties.
+        global reported_state
+        #self.client.send_reported_state(self.client, reported_state, len(reported_state), send_reported_state_callback, SEND_REPORTED_STATE_CONTEXT)
+
     # Forwards the message received onto the next stage in the process.
     def forward_event_to_output(self, outputQueueName, event, send_context):
         self.client.send_event_async(
             outputQueueName, event, send_confirmation_callback, send_context)
+
 
 def main(protocol):
     try:
