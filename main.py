@@ -100,6 +100,7 @@ def check_prev(message_json):
     last_messages[iden] = {}
     last_messages[iden]['time'] = message_json['time']
     last_messages[iden]['estado'] = message_json['estado']
+    # status flag for alert if sensor not sending messages.
     last_messages[iden]['avisado'] = False
 
     print(str(last_messages))
@@ -133,11 +134,11 @@ def process_elevacion_type(message_lora, hubManager):
         json_obj['estado'] = data_decoded_json['stateA']
         json_obj['id'] = TwinPayload['desired']['devices'][deveui]['id']
         json_obj_ = check_prev(json_obj)
-        json_obj.pop('time', 0)
-        json_obj['Fecha'] = time_parser(message_lora)[0]
-        json_obj['Hora'] = time_parser(message_lora)[1]
-        # check previous
+        # check previous would return None if the message is the same
         if json_obj_ != None:
+            json_obj_.pop('time', 0)
+            json_obj_['Fecha'] = time_parser(message_lora)[0]
+            json_obj_['Hora'] = time_parser(message_lora)[1]
             new_message = json.dumps(json_obj_)
             new_message = IoTHubMessage(new_message)
             hubManager.forward_event_to_output("output1", new_message, 0)
@@ -148,11 +149,11 @@ def process_elevacion_type(message_lora, hubManager):
         json_obj['estado'] = data_decoded_json['stateB']
         json_obj['id'] = TwinPayload['desired']['devices'][deveui]['id2']
         json_obj_ = check_prev(json_obj)
-        json_obj.pop('time', 0)
-        json_obj['Fecha'] = time_parser(message_lora)[0]
-        json_obj['Hora'] = time_parser(message_lora)[1]
-        # check previous
+        # check previous would return None if the message is the same
         if json_obj_ != None:
+            json_obj_.pop('time', 0)
+            json_obj_['Fecha'] = time_parser(message_lora)[0]
+            json_obj_['Hora'] = time_parser(message_lora)[1]
             new_message = json.dumps(json_obj_)
             new_message = IoTHubMessage(new_message)
             hubManager.forward_event_to_output("output1", new_message, 0)
@@ -163,18 +164,25 @@ def process_elevacion_type(message_lora, hubManager):
 
 def report_timeout(hubManager):
     global last_messages
+    json_obj = {}
     delta_time = 0
     currentTime = datetime.utcnow()
+    longestTime = timedelta(minutes=60)
     for iden in last_messages.items():
         last_time = last_messages[iden[0]]['time']
         last_time = datetime.strptime(last_time, "%Y-%m-%dT%H:%M:%S.%fZ")
         delta_time = currentTime - last_time
-        if (delta_time > (timedelta(minutes=4))) and (not last_messages[iden[0]]['avisado']):
-                last_messages[iden[0]]['avisado'] = True
-                print("No se reciben mensajes de %s hace mas de 6 minutos." % iden[0])
-                new_message = ("No se reciben mensajes de %s hace mas de 6 minutos." % iden[0])
-                new_message = IoTHubMessage(new_message)
-                hubManager.forward_event_to_output("output1", new_message, 0)            
+        if (delta_time > longestTime) and (not last_messages[iden[0]]['avisado']):
+            last_messages[iden[0]]['avisado'] = True
+            print("\nNo se reciben mensajes de %s hace mas de %s.\n" % (iden[0], longestTime))
+            json_obj['id'] = iden[0]
+            json_obj['estado'] = "Desconectado"
+            last_messages[iden[0]]['estado'] = "Desconectado"
+            json_obj['Fecha'] = currentTime.strftime("%Y-%m-%d")
+            json_obj['Hora'] = currentTime.strftime("%H:%M:%S")
+            new_message = json.dumps(json_obj)
+            new_message = IoTHubMessage(new_message)
+            hubManager.forward_event_to_output("output1", new_message, 0)
 
 
 # receive_message_callback is invoked when an incoming message arrives on the specified 
