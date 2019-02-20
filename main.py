@@ -167,7 +167,7 @@ def report_timeout(hubManager):
     json_obj = {}
     delta_time = 0
     currentTime = datetime.utcnow()
-    longestTime = timedelta(minutes=60)
+    longestTime = timedelta(minutes=60) # max downtime for devices.
     for iden in last_messages.items():
         last_time = last_messages[iden[0]]['time']
         last_time = datetime.strptime(last_time, "%Y-%m-%dT%H:%M:%S.%fZ")
@@ -210,12 +210,14 @@ def receive_message_callback(message, hubManager):
     # look for device declaration if any
     if TwinPayload == {}:
         module_twin_callback
-    if deveui in TwinPayload['desired']['devices']:
-        if 'tipo' in TwinPayload['desired']['devices'][deveui]:
-            if (TwinPayload['desired']['devices'][deveui]['tipo'] == "elevacion"):
-                process_elevacion_type(message_lora, hubManager)
+    # check if module twin is updated
+    if 'desired' in TwinPayload:
+        if deveui in TwinPayload['desired']['devices']:
+            if 'tipo' in TwinPayload['desired']['devices'][deveui]:
+                if (TwinPayload['desired']['devices'][deveui]['tipo'] == "elevacion"):
+                    process_elevacion_type(message_lora, hubManager)
     else:
-        # send event to Hub
+        # send event to Hub without processing.
         hubManager.forward_event_to_output("output1", message, 0)
         
     return IoTHubMessageDispositionResult.ACCEPTED
